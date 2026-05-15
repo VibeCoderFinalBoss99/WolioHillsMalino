@@ -29,8 +29,10 @@ async function postBookingRecord(rec: StoredBooking): Promise<void> {
     const t = await res.text();
     let msg = t || `HTTP ${res.status}`;
     try {
-      const j = JSON.parse(t) as { error?: string };
-      if (j.error) msg = j.error;
+      const j = JSON.parse(t) as { error?: unknown };
+      if (j.error) {
+        msg = typeof j.error === "string" ? j.error : JSON.stringify(j.error);
+      }
     } catch {
       /* keep */
     }

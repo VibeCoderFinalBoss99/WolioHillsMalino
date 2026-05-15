@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle, Trash2 } from "lucide-react";
 import type { RecordedBooking } from "../lib/adminBookingStore";
@@ -13,6 +13,13 @@ export default function DeleteConfirmModal({ booking, onClose, onConfirm }: Prop
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (booking) {
+      setLoading(false);
+      setError(null);
+    }
+  }, [booking]);
+
   if (!booking) return null;
 
   const handleConfirm = async () => {
@@ -20,6 +27,7 @@ export default function DeleteConfirmModal({ booking, onClose, onConfirm }: Prop
     setError(null);
     try {
       await onConfirm(booking.order_id);
+      setLoading(false);
       onClose();
     } catch (err: any) {
       setError(err.message);

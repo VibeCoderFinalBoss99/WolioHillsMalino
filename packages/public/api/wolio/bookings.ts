@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { clientRecordToDbRow, mergeExistingBooking, type BookingDbRow, type ClientBookingRecord } from "../lib/mapBookingRow";
-import { assertSupabaseServiceRoleKey } from "../lib/serviceRoleKey";
+import { clientRecordToDbRow, mergeExistingBooking, type BookingDbRow, type ClientBookingRecord } from "../lib/mapBookingRow.js";
+import { assertSupabaseServiceRoleKey } from "../lib/serviceRoleKey.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
