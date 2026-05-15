@@ -119,7 +119,7 @@ export default function AboutPage() {
       if (typeof requestIdleCallback !== "undefined" && typeof idle === "number") {
         cancelIdleCallback(idle);
       } else {
-        clearTimeout(idle as ReturnType<typeof setTimeout>);
+        window.clearTimeout(idle as number);
       }
     };
   }, []);
