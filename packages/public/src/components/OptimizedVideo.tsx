@@ -49,6 +49,7 @@ export function OptimizedVideo({
           src={posterSrc}
           alt={alt}
           className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
         />
       )}
       {load && (
