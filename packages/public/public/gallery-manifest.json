@@ -1,6 +1,6 @@
 [
   {
-    "file": "hero-section.png",
+    "file": "hero-section.webp",
     "alt": "Hero Section"
   },
   {
@@ -80,11 +80,15 @@
     "alt": "IMG 6985"
   },
   {
-    "file": "picture-2.png",
+    "file": "logo.webp",
+    "alt": "Logo"
+  },
+  {
+    "file": "picture-2.webp",
     "alt": "Picture 2"
   },
   {
-    "file": "picture-3.png",
+    "file": "picture-3.webp",
     "alt": "Picture 3"
   }
 ]

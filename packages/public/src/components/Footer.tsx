@@ -22,9 +22,11 @@ export default function Footer({ navigate }: FooterProps) {
             className="space-y-6"
           >
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center shadow-lg">
-                <span className="font-display font-black text-white text-lg">W</span>
-              </div>
+              <img
+                src="/images/logo.webp"
+                alt="Wolio Hills Logo"
+                className="w-12 h-12 shrink-0 object-contain rounded-xl shadow-lg"
+              />
               <div>
                 <h3 className="font-display font-bold text-xl text-white">Wolio Hills</h3>
                 <p className="text-[9px] font-bold text-white tracking-[0.3em] uppercase">Malino</p>
@@ -127,16 +129,16 @@ export default function Footer({ navigate }: FooterProps) {
                 </div>
               ))}
             </div>
-            
+
             {/* Google Maps */}
             <div className="rounded-xl overflow-hidden shadow-lg">
-              <iframe 
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3973.116640019884!2d119.90284757570312!3d-5.244363294733539!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2dbe9735ae4c684d%3A0x61b95ea46096be7e!2sWolio%20Hills%20Malino!5e0!3m2!1sid!2sid!4v1778495026013!5m2!1sid!2sid" 
-                width="100%" 
-                height="200" 
-                style={{ border: 0 }} 
-                allowFullScreen 
-                loading="lazy" 
+              <iframe
+                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3973.116640019884!2d119.90284757570312!3d-5.244363294733539!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2dbe9735ae4c684d%3A0x61b95ea46096be7e!2sWolio%20Hills%20Malino!5e0!3m2!1sid!2sid!4v1778495026013!5m2!1sid!2sid"
+                width="100%"
+                height="200"
+                style={{ border: 0 }}
+                allowFullScreen
+                loading="lazy"
                 referrerPolicy="no-referrer-when-downgrade"
                 className="w-full"
               />
@@ -145,13 +147,8 @@ export default function Footer({ navigate }: FooterProps) {
         </div>
 
         {/* Bottom Bar */}
-        <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
-            <span className="text-white/50 text-sm">© 2025 Wolio Hills. All rights reserved.</span>
-          <div className="flex gap-6 text-white/30 text-xs tracking-wider uppercase">
-            <span className="hover:text-accent transition-colors cursor-pointer">Privasi</span>
-            <span className="hover:text-accent transition-colors cursor-pointer">Syarat</span>
-            <span className="hover:text-accent transition-colors cursor-pointer">Peta Situs</span>
-          </div>
+        <div className="border-t border-white/10 pt-8 flex items-center justify-center">
+          <span className="text-white/50 text-sm">© 2026 Wolio Hills Malino. All rights reserved.</span>
         </div>
       </div>
     </footer>

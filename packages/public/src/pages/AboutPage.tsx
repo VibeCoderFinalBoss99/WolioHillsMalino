@@ -276,12 +276,12 @@ export default function AboutPage() {
             viewport={{ once: true }}
             className="w-full min-h-[380px] lg:min-h-[520px] relative rounded-3xl overflow-hidden shadow-deep gold-border"
           >
-            <img
-              src="./images/picture-3.png"
-              alt="Interior villa Wolio Hills dengan pemandangan hutan"
-              className="absolute inset-0 w-full h-full object-cover"
-              loading="lazy"
-            />
+              <img
+                src="./images/picture-3.webp"
+                alt="Interior villa Wolio Hills dengan pemandangan hutan"
+                className="absolute inset-0 w-full h-full object-cover"
+                loading="lazy"
+              />
           </m.div>
           <m.div initial={{ opacity: 0, x: 24 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="lg:pl-2">
             <SectionLabel>Kisah Kami</SectionLabel>

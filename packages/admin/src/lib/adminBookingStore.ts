@@ -129,3 +129,28 @@ export function subscribeBookingUpdates(onUpdate: () => void): () => void {
     window.clearInterval(interval);
   };
 }
+
+export async function deleteBooking(orderId: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.from("bookings").delete().eq("order_id", orderId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateBooking(orderId: string, updates: Partial<StoredBooking>): Promise<void> {
+  const supabase = getSupabase();
+  const dbUpdates: Partial<BookingDbRow> = {};
+  
+  if (updates.guestName !== undefined) dbUpdates.guest_name = updates.guestName;
+  if (updates.guestEmail !== undefined) dbUpdates.guest_email = updates.guestEmail;
+  if (updates.guestPhone !== undefined) dbUpdates.guest_phone = updates.guestPhone;
+  if (updates.gross_amount !== undefined) dbUpdates.gross_amount = updates.gross_amount;
+  if (updates.checkIn !== undefined) dbUpdates.check_in = updates.checkIn;
+  if (updates.checkOut !== undefined) dbUpdates.check_out = updates.checkOut;
+  if (updates.propertyName !== undefined) dbUpdates.property_name = updates.propertyName;
+  if (updates.payment_status !== undefined) dbUpdates.payment_status = updates.payment_status;
+  if (updates.payment_type !== undefined) dbUpdates.payment_type = updates.payment_type;
+  if (updates.transaction_status !== undefined) dbUpdates.transaction_status = updates.transaction_status;
+
+  const { error } = await supabase.from("bookings").update(dbUpdates).eq("order_id", orderId);
+  if (error) throw new Error(error.message);
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import { m } from "motion/react";
 import { Star, Shield, Clock, Headphones, Bed, Users, MapPin, ArrowRight, Quote } from "lucide-react";
 import { TESTIMONIALS } from "../data/properties";
@@ -32,46 +32,15 @@ function FeatureCard({ icon: Icon, title, desc, delay }: { icon: React.ElementTy
   );
 }
 
-interface VideoData {
-  id: number;
-  src: string;
-  title: string;
-  desc?: string;
-}
-
-/** Hanya memuat/memutar saat mendekati viewport — mengurangi jaringan & decode saat load/scroll. */
-function InViewLoopVideo({ src, className, poster }: { src: string; className?: string; poster?: string }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        const e = entries[0];
-        if (!e) return;
-        if (e.isIntersecting) void el.play().catch(() => {});
-        else el.pause();
-      },
-      { root: null, rootMargin: "100px", threshold: 0.12 }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  return (
-    <video ref={ref} className={className} muted loop playsInline preload="none" poster={poster}>
-      <source src={src} type="video/mp4" />
-    </video>
-  );
-}
+import { OptimizedVideo } from "../components/OptimizedVideo";
 
 export default function HomePage({ navigate, startBooking }: HomePageProps) {
-  // Video data from folder
-  const videos: VideoData[] = [
-    { id: 1, src: '/videos/Kamar 2.mp4', title: 'Ruangan Nyaman', desc: 'Kamar tidur elegan dengan desain modern dan fasilitas premium untuk kenyamanan maksimal selama menginap.' },
-    { id: 2, src: '/videos/Kamar Utama WolioHills Malino.mp4', title: 'Master Suite', desc: 'Suite utama mewah dengan pemandangan pegunungan yang memukau dan interior yang sangat eksklusif.' },
-    { id: 3, src: '/videos/AQPID_FrWBbQc42KzRwuMv5ZxOM8EPGcxl-gNfa6Haur_YLcSGyJNNmRBu986ErbgkDiwZ7Xm0lLoPAX6f1RPGbpuGNDIrLu.mp4', title: 'Mountain View', desc: 'Pemandangan pegunungan yang hijau dan memukau dari villa, suasana segar dan menenangkan.' },
-    { id: 4, src: '/videos/AQPzTBWRPErBRSBgwgtoPXd4ao3HQIc8Pb4Oi3RFryqSJJ111hGC6shizQBaE83KiIG4Hjb72Kqyc078KH86BkVZHtz2oBxp.mp4', title: 'Tropical Garden', desc: 'Perkebunan tropis yang asri dan hijau, nuansa alami yang menyegarkan di tengah Malino.' },
-    { id: 5, src: '/videos/overview.mp4', title: 'Villa Panorama', desc: 'Panorama lengkap villa dengan latar pegunungan dan perkebunan yang indah, pemandangan eksklusif Wolio Hills.' }
+  const videos = [
+    { id: 1, src: '/videos/optimized/room-2-tour.mp4', poster: '/videos/posters/video3-poster.jpg', title: 'Ruangan Nyaman', desc: 'Kamar tidur elegan dengan desain modern dan fasilitas premium untuk kenyamanan maksimal selama menginap.' },
+    { id: 2, src: '/videos/optimized/room-main-tour.mp4', poster: '/videos/posters/video4-poster.jpg', title: 'Master Suite', desc: 'Suite utama mewah dengan pemandangan pegunungan yang memukau dan interior yang sangat eksklusif.' },
+    { id: 3, src: '/videos/optimized/room-tour-1.mp4', poster: '/videos/posters/video1-poster.jpg', title: 'Mountain View', desc: 'Pemandangan pegunungan yang hijau dan memukau dari villa, suasana segar dan menenangkan.' },
+    { id: 4, src: '/videos/optimized/room-tour-2.mp4', poster: '/videos/posters/video2-poster.jpg', title: 'Tropical Garden', desc: 'Perkebunan tropis yang asri dan hijau, nuansa alami yang menyegarkan di tengah Malino.' },
+    { id: 5, src: '/videos/optimized/overview-optimized.mp4', poster: '/videos/posters/overview-poster.jpg', title: 'Villa Panorama', desc: 'Panorama lengkap villa dengan latar pegunungan dan perkebunan yang indah, pemandangan eksklusif Wolio Hills.' }
   ];
 
   return (
@@ -81,7 +50,7 @@ export default function HomePage({ navigate, startBooking }: HomePageProps) {
         {/* Full-size background image — slight bleed menghindari garis sub-pixel di tepi atas */}
         <div className="absolute -inset-px min-h-[calc(100%+2px)] min-w-[calc(100%+2px)]">
           <img
-            src="./images/hero-section.png"
+            src="./images/hero-section.webp"
             alt="Wolio Hills Malino"
             className="h-full w-full max-w-none object-cover object-center"
             width={1920}
@@ -258,10 +227,11 @@ export default function HomePage({ navigate, startBooking }: HomePageProps) {
                   >
                     {/* Video Container */}
                     <div className="relative aspect-[9/16] w-full">
-                      <InViewLoopVideo
-                        poster="/images/logo.png"
+                      <OptimizedVideo
                         src={video.src}
+                        posterSrc={video.poster}
                         className="h-full w-full object-cover transition-all duration-500 ease-out group-hover:scale-105 group-hover:brightness-105"
+                        autoPlay
                       />
 
                       {/* Gradient Overlay */}
@@ -327,7 +297,7 @@ export default function HomePage({ navigate, startBooking }: HomePageProps) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <m.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="relative">
               <div className="rounded-3xl overflow-hidden shadow-2xl">
-                <img src="./images/picture-2.png" alt="Wolio Hills Malino" className="w-full h-[400px] object-cover" loading="lazy" />
+                <img src="./images/picture-2.webp" alt="Wolio Hills Malino" className="w-full h-[400px] object-cover" loading="lazy" />
               </div>
               <div
                 className="absolute -bottom-6 -right-6 bg-accent text-primary p-4 rounded-2xl shadow-xl"

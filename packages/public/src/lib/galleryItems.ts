@@ -2,9 +2,9 @@ export type GalleryEntry = { src: string; alt: string };
 
 /** Fallback jika manifest kosong / gagal dimuat (setiap src unik). */
 export const GALLERY_FALLBACK: GalleryEntry[] = [
-  { src: "/images/picture-3.png", alt: "Interior dan detail villa Wolio Hills" },
-  { src: "/images/picture-2.png", alt: "Ruang tamu dan area bersantai" },
-  { src: "/images/hero-section.png", alt: "Pemandangan pegunungan Malino" },
+  { src: "/images/picture-3.webp", alt: "Interior dan detail villa Wolio Hills" },
+  { src: "/images/picture-2.webp", alt: "Ruang tamu dan area bersantai" },
+  { src: "/images/hero-section.webp", alt: "Pemandangan pegunungan Malino" },
 ];
 
 export function normalizeGallerySrc(src: string): string {

@@ -97,9 +97,9 @@ export default function Navbar({ currentPage, navigate }: NavbarProps) {
             onClick={() => { navigate("home"); setIsMobileOpen(false); }}
           >
             <img 
-              src="/images/logo.png" 
+              src="/images/logo.webp" 
               alt="Wolio Hills Logo" 
-              className="w-10 h-10 shrink-0 object-contain rounded-full group-hover:scale-110 transition-transform duration-300"
+              className="w-10 h-10 shrink-0 object-contain rounded-xl group-hover:scale-110 transition-transform duration-300"
             />
             <div className="hidden sm:flex flex-col">
               <span className="font-display font-bold text-white text-lg leading-none tracking-wide">Wolio Hills</span>
@@ -164,9 +164,9 @@ export default function Navbar({ currentPage, navigate }: NavbarProps) {
                 className="w-20 h-20 flex items-center justify-center shadow-2xl mb-6"
               >
                 <img 
-                  src="/images/logo.png" 
+                  src="/images/logo.webp" 
                   alt="Wolio Hills Logo" 
-                  className="w-full h-full object-contain rounded-full"
+                  className="w-full h-full object-contain rounded-xl"
                 />
               </m.div>
 

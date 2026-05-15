@@ -9,570 +9,137 @@ import {
   RefreshCw,
   Users,
   Phone,
-  Building2,
   Download,
-  LineChart,
-  Layers,
+  AlertTriangle,
+  Eye,
+  Lightbulb,
+  Wallet
 } from "lucide-react";
 import {
-  deriveBookingStats,
   fetchAllBookingsSorted,
   subscribeBookingUpdates,
-  type PaymentUiStatus,
+  deleteBooking,
+  updateBooking,
   type RecordedBooking,
 } from "../lib/adminBookingStore";
+import {
+  type TimeRangePreset,
+  type PaymentStatusFilter,
+  TIME_RANGE_OPTIONS,
+  PAYMENT_STATUS_FILTER_OPTIONS,
+  PAGE_SIZE_OPTIONS,
+  filterBookingsByTimeRange,
+  buildAggregatedSeries,
+  getChartGranularity,
+  getGranularityLabel,
+  computeMonthlyComparison,
+  computeStatusComposition,
+  computeDonutInsights,
+  computeQuickInsights,
+  computePaymentBanners,
+  computeBookingBanners,
+  formatIdr,
+  formatWhen,
+  paymentStatusLabel,
+  paymentStatusBadgeClass,
+  truncateOrderId,
+  getUnifiedBookingStatus,
+  getCheckInBadge,
+  exportSeriesCsv,
+  exportBookingsCsv,
+  slicePage,
+  totalPagesFor,
+} from "../lib/chartUtils";
+import StatusDonutChart from "../components/StatusDonutChart";
+import AdaptiveBarChart from "../components/AdaptiveBarChart";
+import BookingDetailModal from "../components/BookingDetailModal";
+import BookingEditModal from "../components/BookingEditModal";
+import DeleteConfirmModal from "../components/DeleteConfirmModal";
 import { useAuth } from "../context/AuthContext";
 
 type TabId = "analytics" | "payments" | "bookings";
-
-const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100] as const;
-
-type TimeRangePreset = "1d" | "1w" | "1m" | "1y" | "all";
-
-type PaymentStatusFilter = "all" | PaymentUiStatus;
-
-const TIME_RANGE_OPTIONS: { value: TimeRangePreset; label: string }[] = [
-  { value: "1d", label: "1 hari" },
-  { value: "1w", label: "1 minggu" },
-  { value: "1m", label: "1 bulan" },
-  { value: "1y", label: "1 tahun" },
-  { value: "all", label: "Semua waktu" },
-];
-
-const PAYMENT_STATUS_FILTER_OPTIONS: { value: PaymentStatusFilter; label: string }[] = [
-  { value: "all", label: "Semua status" },
-  { value: "berhasil", label: "Berhasil" },
-  { value: "pending", label: "Pending" },
-  { value: "gagal", label: "Gagal" },
-  { value: "dibatalkan", label: "Cancel" },
-];
-
-function bookingTimeMs(b: RecordedBooking): number {
-  const t = new Date(b.recordedAt).getTime();
-  return Number.isFinite(t) ? t : 0;
-}
-
-function getTimeRangeCutoffMs(preset: Exclude<TimeRangePreset, "all">): number {
-  const MS_DAY = 86_400_000;
-  const now = Date.now();
-  switch (preset) {
-    case "1d":
-      return now - MS_DAY;
-    case "1w":
-      return now - 7 * MS_DAY;
-    case "1m":
-      return now - 30 * MS_DAY;
-    case "1y":
-      return now - 365 * MS_DAY;
-  }
-}
-
-function filterBookingsByTimeRange(bookings: RecordedBooking[], preset: TimeRangePreset): RecordedBooking[] {
-  if (preset === "all") return bookings;
-  const cutoff = getTimeRangeCutoffMs(preset);
-  return bookings.filter((b) => bookingTimeMs(b) >= cutoff);
-}
-
-function trendDaysForPreset(preset: TimeRangePreset): number {
-  switch (preset) {
-    case "1d":
-      return 1;
-    case "1w":
-      return 7;
-    case "1m":
-      return 30;
-    case "1y":
-      return 365;
-    case "all":
-      return 0;
-  }
-}
-
-/** Satu bucket per hari kalender dari `start` sampai `end` (inklusif, jam 00:00 lokal). */
-function getDailySeriesFromStartEnd(
-  bookings: RecordedBooking[],
-  start: Date,
-  end: Date
-): { date: string; count: number; revenue: number }[] {
-  const series: { date: string; count: number; revenue: number }[] = [];
-  const cur = new Date(start);
-  cur.setHours(0, 0, 0, 0);
-  const endDay = new Date(end);
-  endDay.setHours(0, 0, 0, 0);
-  if (cur > endDay) return [{ date: toLocalYmd(endDay), count: 0, revenue: 0 }];
-  while (cur <= endDay) {
-    series.push({ date: toLocalYmd(new Date(cur)), count: 0, revenue: 0 });
-    cur.setDate(cur.getDate() + 1);
-  }
-  const idx = new Map(series.map((s, i) => [s.date, i]));
-  for (const b of bookings) {
-    const day = b.recordedAt.slice(0, 10);
-    const i = idx.get(day);
-    if (i !== undefined) {
-      series[i].count += 1;
-      series[i].revenue += Number.isFinite(b.gross_amount) ? b.gross_amount : 0;
-    }
-  }
-  return series;
-}
-
-/** Seri harian mengikuti rentang waktu (rolling untuk 1d–1y; rentang penuh untuk all, dibatasi 730 hari). */
-function getDailySeriesForTimeRange(bookings: RecordedBooking[], preset: TimeRangePreset): { date: string; count: number; revenue: number }[] {
-  if (preset !== "all") {
-    const days = trendDaysForPreset(preset);
-    return getDailySeries(bookings, Math.max(1, days));
-  }
-  const times = bookings.map(bookingTimeMs).filter((t) => t > 0);
-  if (times.length === 0) return getDailySeries(bookings, 1);
-  const minMs = Math.min(...times);
-  const start = new Date(minMs);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date();
-  end.setHours(0, 0, 0, 0);
-  const span = Math.ceil((end.getTime() - start.getTime()) / 86_400_000) + 1;
-  const MAX = 730;
-  if (span > MAX) {
-    const cappedStart = new Date(end.getTime() - (MAX - 1) * 86_400_000);
-    cappedStart.setHours(0, 0, 0, 0);
-    return getDailySeriesFromStartEnd(bookings, cappedStart, end);
-  }
-  return getDailySeriesFromStartEnd(bookings, start, end);
-}
-
-function slicePage<T>(items: T[], page: number, pageSize: number): T[] {
-  const p = Math.max(1, page);
-  const start = (p - 1) * pageSize;
-  return items.slice(start, start + pageSize);
-}
-
-function totalPagesFor(totalItems: number, pageSize: number): number {
-  return Math.max(1, Math.ceil(totalItems / pageSize));
-}
-
-function formatIdr(n: number): string {
-  return `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-}
-
-function formatWhen(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("id-ID", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function toLocalYmd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/** Seri harian untuk chart (hari terakhir `days`). */
-function getDailySeries(bookings: RecordedBooking[], days: number): { date: string; count: number; revenue: number }[] {
-  const end = new Date();
-  const series: { date: string; count: number; revenue: number }[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(end);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    series.push({ date: toLocalYmd(d), count: 0, revenue: 0 });
-  }
-  const idx = new Map(series.map((s, i) => [s.date, i]));
-  for (const b of bookings) {
-    const day = b.recordedAt.slice(0, 10);
-    const i = idx.get(day);
-    if (i !== undefined) {
-      series[i].count += 1;
-      series[i].revenue += Number.isFinite(b.gross_amount) ? b.gross_amount : 0;
-    }
-  }
-  return series;
-}
-
 type TrendMetric = "count" | "revenue";
-type TrendChartKind = "bar" | "line" | "area";
-
-function paymentStatusLabel(s: PaymentUiStatus): string {
-  switch (s) {
-    case "berhasil":
-      return "Berhasil";
-    case "pending":
-      return "Pending";
-    case "gagal":
-      return "Gagal";
-    case "dibatalkan":
-      return "Cancel";
-    default:
-      return String(s);
-  }
-}
-
-function paymentStatusBadgeClass(s: PaymentUiStatus): string {
-  switch (s) {
-    case "berhasil":
-      return "bg-emerald-100 text-emerald-900";
-    case "pending":
-      return "bg-amber-100 text-amber-950";
-    case "gagal":
-      return "bg-red-100 text-red-900";
-    case "dibatalkan":
-      return "bg-slate-200 text-slate-800";
-    default:
-      return "bg-surface text-text";
-  }
-}
-
-/** Kolom CSV laporan: header bahasa Indonesia, mudah dibuka di Excel */
-const BOOKING_CSV_SPEC: { key: keyof RecordedBooking; header: string }[] = [
-  { key: "order_id", header: "Order_ID" },
-  { key: "transaction_id", header: "Transaction_ID" },
-  { key: "guestName", header: "Nama_Tamu" },
-  { key: "guestEmail", header: "Email" },
-  { key: "guestPhone", header: "Telepon" },
-  { key: "gross_amount", header: "Total_IDR_hanya_jika_berhasil" },
-  { key: "checkIn", header: "Check_in" },
-  { key: "checkOut", header: "Check_out" },
-  { key: "propertyName", header: "Properti" },
-  { key: "payment_type", header: "Metode_pembayaran" },
-  { key: "payment_status", header: "Keterangan_pembayaran" },
-  { key: "transaction_status", header: "Status_Midtrans" },
-  { key: "recordedAt", header: "Waktu_dicatat_ISO" },
-];
-
-function csvEscapeCell(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function downloadBlob(filename: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportDailySeriesCsv(series: { date: string; count: number; revenue: number }[]) {
-  const stamp = new Date().toISOString().slice(0, 10);
-  const header = "Tanggal,Jumlah_Booking,Pendapatan_IDR";
-  const rows = series.map((s) => `${s.date},${s.count},${s.revenue}`).join("\r\n");
-  const BOM = "\uFEFF";
-  downloadBlob(`wolio-tren-harian-${stamp}.csv`, new Blob([BOM + header + "\r\n" + rows], { type: "text/csv;charset=utf-8;" }));
-}
-
-function exportBookingsCsv(bookings: RecordedBooking[]) {
-  const stamp = new Date().toISOString().slice(0, 10);
-  const header = BOOKING_CSV_SPEC.map((c) => c.header).join(",");
-  const rows = bookings
-    .map((b) =>
-      BOOKING_CSV_SPEC.map((c) => {
-        const raw =
-          c.key === "payment_status" ? paymentStatusLabel(b.payment_status) : String(b[c.key] ?? "");
-        return csvEscapeCell(raw);
-      }).join(",")
-    )
-    .join("\r\n");
-  const BOM = "\uFEFF";
-  downloadBlob(`wolio-booking-${stamp}.csv`, new Blob([BOM + header + "\r\n" + rows], { type: "text/csv;charset=utf-8;" }));
-}
-
-function TrendBarBody({
-  series,
-  valueKey,
-  formatValue,
-  accentClass,
-}: {
-  series: { date: string; count: number; revenue: number }[];
-  valueKey: TrendMetric;
-  formatValue: (n: number) => string;
-  accentClass: string;
-}) {
-  const values = series.map((s) => s[valueKey]);
-  const max = Math.max(1, ...values);
-
-  return (
-    <div className="flex items-end justify-between gap-1 h-52 px-1">
-      {series.map((s) => {
-        const v = s[valueKey];
-        const pct = (v / max) * 100;
-        return (
-          <div key={s.date} className="flex-1 min-w-0 flex flex-col items-center gap-2">
-            <div className="relative w-full max-w-[28px] mx-auto flex flex-col justify-end h-40">
-              <div
-                className={`w-full rounded-t-md transition-all ${accentClass} ${v === 0 ? "opacity-25" : "opacity-100 shadow-md"}`}
-                style={{ height: `${Math.max(v === 0 ? 0 : 8, pct)}%` }}
-                title={`${s.date}: ${formatValue(v)}`}
-              />
-            </div>
-            <span className="text-[9px] font-medium text-text-light tabular-nums leading-none text-center w-full truncate">
-              {s.date.slice(8)}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function LineAreaTrendSvg({
-  series,
-  valueKey,
-  kind,
-  strokeColor,
-  fillGradientId,
-}: {
-  series: { date: string; count: number; revenue: number }[];
-  valueKey: TrendMetric;
-  kind: "line" | "area";
-  strokeColor: string;
-  fillGradientId: string;
-}) {
-  const w = 100;
-  const h = 48;
-  const max = Math.max(1, ...series.map((s) => s[valueKey]));
-  const linePoints = series
-    .map((s, i) => {
-      const x = series.length <= 1 ? w / 2 : (i / (series.length - 1)) * w;
-      const y = h - (s[valueKey] / max) * (h - 4) - 2;
-      return `${x},${y}`;
-    })
-    .join(" ");
-  const fillPoints = `0,${h} ${linePoints} ${w},${h}`;
-
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-40 w-full overflow-visible" preserveAspectRatio="none" aria-hidden>
-      {kind === "area" && (
-        <>
-          <defs>
-            <linearGradient id={fillGradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={strokeColor} stopOpacity="0.38" />
-              <stop offset="100%" stopColor={strokeColor} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <polygon fill={`url(#${fillGradientId})`} points={fillPoints} />
-        </>
-      )}
-      <polyline
-        fill="none"
-        stroke={strokeColor}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={linePoints}
-      />
-    </svg>
-  );
-}
 
 function segmentBtn(active: boolean) {
-  return `rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-    active ? "bg-primary text-white shadow-sm" : "text-text hover:bg-surface"
-  }`;
+  return `rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${active ? "bg-primary text-white shadow-sm" : "text-text hover:bg-surface"
+    }`;
 }
 
-function TimeRangeSelect({
-  id,
-  value,
-  onChange,
-  className = "",
-}: {
-  id: string;
-  value: TimeRangePreset;
-  onChange: (v: TimeRangePreset) => void;
-  className?: string;
-}) {
+function TimeRangeSelect({ id, value, onChange, className = "" }: { id: string; value: TimeRangePreset; onChange: (v: TimeRangePreset) => void; className?: string }) {
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <label htmlFor={id} className="whitespace-nowrap text-xs font-semibold text-text">
-        Rentang waktu
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value as TimeRangePreset)}
-        className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-      >
-        {TIME_RANGE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
+      <label htmlFor={id} className="whitespace-nowrap text-xs font-semibold text-text">Rentang waktu</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as TimeRangePreset)} className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30">
+        {TIME_RANGE_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
     </div>
   );
 }
 
-function PaymentStatusFilterSelect({
-  id,
-  value,
-  onChange,
-  className = "",
-}: {
-  id: string;
-  value: PaymentStatusFilter;
-  onChange: (v: PaymentStatusFilter) => void;
-  className?: string;
-}) {
+function PaymentStatusFilterSelect({ id, value, onChange, className = "" }: { id: string; value: PaymentStatusFilter; onChange: (v: PaymentStatusFilter) => void; className?: string }) {
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <label htmlFor={id} className="whitespace-nowrap text-xs font-semibold text-text">
-        Status pembayaran
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value as PaymentStatusFilter)}
-        className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
-      >
-        {PAYMENT_STATUS_FILTER_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
+      <label htmlFor={id} className="whitespace-nowrap text-xs font-semibold text-text">Status pembayaran</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as PaymentStatusFilter)} className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30">
+        {PAYMENT_STATUS_FILTER_OPTIONS.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
     </div>
   );
 }
 
-function DailyTrendExplorer({ bookings }: { bookings: RecordedBooking[] }) {
+function TrendExplorer({ bookings }: { bookings: RecordedBooking[] }) {
   const [timeRange, setTimeRange] = useState<TimeRangePreset>("1m");
   const [metric, setMetric] = useState<TrendMetric>("count");
-  const [chartKind, setChartKind] = useState<TrendChartKind>("bar");
   const trendTimeSelectId = useId();
-  const fillId = useId().replace(/:/g, "_");
 
   const filteredBookings = filterBookingsByTimeRange(bookings, timeRange);
-  const series = getDailySeriesForTimeRange(bookings, timeRange);
+  const granularity = getChartGranularity(timeRange);
+  const series = buildAggregatedSeries(filteredBookings, timeRange);
   const rangeDescription = TIME_RANGE_OPTIONS.find((o) => o.value === timeRange)?.label ?? timeRange;
-
-  const strokeColor = metric === "count" ? "#2D3748" : "#C19652";
-  const barClass = metric === "count" ? "bg-primary" : "bg-accent";
-  const metricLabel = metric === "count" ? "Jumlah booking per hari" : "Pendapatan (IDR) per hari";
-  const formatVal = (n: number) => (metric === "count" ? `${n} booking` : formatIdr(n));
+  const metricLabel = metric === "count" ? `Jumlah booking (${getGranularityLabel(granularity)})` : `Pendapatan IDR (${getGranularityLabel(granularity)})`;
 
   return (
     <div className="bg-white rounded-xl border border-surface-dark shadow-sm p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <h3 className="font-display font-bold text-lg text-primary">Tren harian</h3>
+          <h3 className="font-display font-bold text-lg text-primary">Tren {getGranularityLabel(granularity)}</h3>
           <p className="mt-1 text-sm text-text-light">
-            Agregasi per hari berdasarkan waktu pembayaran tercatat — rentang: <span className="font-semibold text-primary">{rangeDescription}</span>
-            {timeRange === "all" && series.length >= 730 ? " (tampilan grafik dibatasi 730 hari terakhir agar ringan)." : ""}
+            Agregasi <span className="font-semibold text-primary">{getGranularityLabel(granularity).toLowerCase()}</span> — rentang: <span className="font-semibold text-primary">{rangeDescription}</span>
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
           <TimeRangeSelect id={trendTimeSelectId} value={timeRange} onChange={setTimeRange} />
           <div className="flex items-center gap-2 rounded-lg border border-surface-dark bg-surface/40 p-1">
             <span className="pl-2 text-[10px] font-bold uppercase tracking-wider text-text-light">Metrik</span>
-            <button type="button" className={segmentBtn(metric === "count")} onClick={() => setMetric("count")}>
-              Booking
-            </button>
-            <button type="button" className={segmentBtn(metric === "revenue")} onClick={() => setMetric("revenue")}>
-              Pendapatan
-            </button>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-surface-dark bg-surface/40 p-1">
-            <span className="pl-2 text-[10px] font-bold uppercase tracking-wider text-text-light">Grafik</span>
-            <button type="button" className={segmentBtn(chartKind === "bar")} onClick={() => setChartKind("bar")} title="Diagram batang">
-              <span className="inline-flex items-center gap-1">
-                <BarChart3 className="h-3.5 w-3.5" />
-                Batang
-              </span>
-            </button>
-            <button type="button" className={segmentBtn(chartKind === "line")} onClick={() => setChartKind("line")} title="Diagram garis">
-              <span className="inline-flex items-center gap-1">
-                <LineChart className="h-3.5 w-3.5" />
-                Garis
-              </span>
-            </button>
-            <button type="button" className={segmentBtn(chartKind === "area")} onClick={() => setChartKind("area")} title="Diagram area">
-              <span className="inline-flex items-center gap-1">
-                <Layers className="h-3.5 w-3.5" />
-                Area
-              </span>
-            </button>
+            <button type="button" className={segmentBtn(metric === "count")} onClick={() => setMetric("count")}>Booking</button>
+            <button type="button" className={segmentBtn(metric === "revenue")} onClick={() => setMetric("revenue")}>Pendapatan</button>
           </div>
         </div>
       </div>
 
       <p className="mb-4 mt-4 text-sm text-text-light">{metricLabel}</p>
 
-      {chartKind === "bar" ? (
-        <TrendBarBody series={series} valueKey={metric} formatValue={formatVal} accentClass={barClass} />
-      ) : (
-        <LineAreaTrendSvg series={series} valueKey={metric} kind={chartKind} strokeColor={strokeColor} fillGradientId={fillId} />
-      )}
+      <AdaptiveBarChart series={series} metric={metric} />
 
-      <div className="mt-2 flex justify-between text-[10px] font-medium text-text-light">
-        <span>{series[0]?.date ?? "—"}</span>
-        <span>{series[series.length - 1]?.date ?? "—"}</span>
-      </div>
-      <p className="mt-3 text-center text-[11px] text-text-light">Sumbu X: tanggal (sesuai rentang waktu)</p>
-
-      <div className="mt-8 border-t border-surface-dark pt-6">
-        <h4 className="mb-1 font-display text-base font-bold text-primary">Tabel tren harian</h4>
-        <p className="mb-3 text-xs text-text-light">
-          Mengikuti rentang waktu di atas; satu baris per tanggal (sumbu X grafik).
-        </p>
-        <div className="max-h-64 overflow-auto rounded-lg border border-surface-dark">
-          <table className="w-full min-w-[280px] text-sm">
-            <thead className="sticky top-0 bg-surface text-left text-xs font-semibold uppercase tracking-wider text-text">
-              <tr>
-                <th className="px-4 py-3">Tanggal</th>
-                <th className="px-4 py-3 text-right">Booking</th>
-                <th className="px-4 py-3 text-right">Pendapatan</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-dark">
-              {series.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-text-light">
-                    Tidak ada data.
-                  </td>
-                </tr>
-              ) : (
-                series.map((row) => (
-                  <tr key={row.date} className="hover:bg-surface/50">
-                    <td className="px-4 py-2.5 font-mono text-xs text-primary">{row.date}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-text">{row.count}</td>
-                    <td className="px-4 py-2.5 text-right font-medium tabular-nums text-text">{formatIdr(row.revenue)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+      {/* Export buttons */}
       <div className="mt-6 flex flex-col gap-2 border-t border-surface-dark pt-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-text-light">Ekspor data</p>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => exportDailySeriesCsv(series)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-surface-dark bg-white px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-surface"
-          >
-            <Download className="h-3.5 w-3.5" />
-            CSV tren
+          <button type="button" onClick={() => exportSeriesCsv(series, granularity)} className="inline-flex items-center gap-1.5 rounded-lg border border-surface-dark bg-white px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-surface">
+            <Download className="h-3.5 w-3.5" /> CSV tren
           </button>
-          <button
-            type="button"
-            onClick={() => exportBookingsCsv(filteredBookings)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
-          >
-            <Download className="h-3.5 w-3.5" />
-            CSV booking
+          <button type="button" onClick={() => exportBookingsCsv(filteredBookings)} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10">
+            <Download className="h-3.5 w-3.5" /> CSV booking
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+
+
+
 
 export default function AdminDashboard() {
   const { signOut, profileDisplayName } = useAuth();
@@ -595,11 +162,11 @@ export default function AdminDashboard() {
     refresh();
   }, [refresh]);
 
-  const stats = deriveBookingStats(bookings);
+
 
   const menuItems: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "payments", label: "Pembayaran", icon: CreditCard },
+    { id: "payments", label: "Monitoring Pembayaran", icon: CreditCard },
     { id: "bookings", label: "Data Booking", icon: Calendar },
   ];
 
@@ -662,9 +229,8 @@ export default function AdminDashboard() {
                 type="button"
                 title={item.label}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors sm:h-12 sm:w-12 ${
-                  active ? "bg-primary text-white shadow-md" : "text-text-light hover:bg-surface hover:text-primary"
-                }`}
+                className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors sm:h-12 sm:w-12 ${active ? "bg-primary text-white shadow-md" : "text-text-light hover:bg-surface hover:text-primary"
+                  }`}
                 aria-current={active ? "page" : undefined}
                 aria-label={item.label}
               >
@@ -688,9 +254,8 @@ export default function AdminDashboard() {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-all ${
-                    active ? "bg-primary text-white shadow-md" : "text-text hover:bg-surface"
-                  }`}
+                  className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-all ${active ? "bg-primary text-white shadow-md" : "text-text hover:bg-surface"
+                    }`}
                 >
                   <Icon className={`h-5 w-5 shrink-0 ${active ? "text-accent" : "text-text-light"}`} />
                   <span className="text-sm font-medium">{item.label}</span>
@@ -717,7 +282,7 @@ export default function AdminDashboard() {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.25 }}
             >
-              {activeTab === "analytics" && <AnalyticsSection stats={stats} bookings={bookings} />}
+              {activeTab === "analytics" && <AnalyticsSection bookings={bookings} />}
               {activeTab === "payments" && <PaymentsSection bookings={bookings} />}
               {activeTab === "bookings" && <BookingsDataSection bookings={bookings} />}
             </m.div>
@@ -796,111 +361,154 @@ function ClientPaginationFooter({
 }
 
 function AnalyticsSection({
-  stats,
   bookings,
 }: {
-  stats: { count: number; revenue: number };
   bookings: RecordedBooking[];
 }) {
-  const recentListSelectId = useId();
-  const recentTimeSelectId = useId();
-  const [timeRangeRecent, setTimeRangeRecent] = useState<TimeRangePreset>("all");
-  const [recentPage, setRecentPage] = useState(1);
-  const [recentPageSize, setRecentPageSize] = useState(10);
+  const kpis = computeMonthlyComparison(bookings);
+  const donutData = computeStatusComposition(bookings);
+  const donutInsights = computeDonutInsights(bookings);
+  const quickInsights = computeQuickInsights(bookings);
 
-  const filteredRecent = filterBookingsByTimeRange(bookings, timeRangeRecent);
+  function TrendBadge({ trend }: { trend: number | null }) {
+    if (trend === null) return <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">→ Tidak ada pembanding</span>;
+    if (trend === 0) return <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">→ Sama dgn bln lalu</span>;
+    if (trend > 0) return <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700 font-medium">↑ {trend.toFixed(1)}%</span>;
+    return <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 font-medium">↓ {Math.abs(trend).toFixed(1)}%</span>;
+  }
 
-  useEffect(() => {
-    setRecentPage(1);
-  }, [recentPageSize, timeRangeRecent]);
-
-  useEffect(() => {
-    const tp = totalPagesFor(filteredRecent.length, recentPageSize);
-    setRecentPage((p) => Math.min(p, tp));
-  }, [filteredRecent.length, recentPageSize]);
-
-  const recentTp = totalPagesFor(filteredRecent.length, recentPageSize);
-  const recentSafePage = Math.min(Math.max(1, recentPage), recentTp);
-  const pagedRecent = slicePage(filteredRecent, recentSafePage, recentPageSize);
+  function TrendBadgeInverted({ trend }: { trend: number | null }) {
+    if (trend === null) return <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">→ Tidak ada pembanding</span>;
+    if (trend === 0) return <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">→ Sama dgn bln lalu</span>;
+    if (trend > 0) return <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 font-medium">↑ {trend.toFixed(1)}%</span>;
+    return <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700 font-medium">↓ {Math.abs(trend).toFixed(1)}%</span>;
+  }
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div>
         <h2 className="font-display font-bold text-2xl text-primary mb-1">Analytics Overview</h2>
-        <p className="text-text-light text-sm">Ringkasan booking dan pendapatan Wolio Hills</p>
+        <p className="text-text-light text-sm">Ringkasan operasional dan tren Wolio Hills bulan ini</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <m.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-xl p-6 border border-surface-dark shadow-sm"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-accent" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1 */}
+        <div className="bg-white rounded-xl p-5 border border-surface-dark shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+              <Calendar className="w-5 h-5 text-primary" />
             </div>
-            <span className="text-xs font-medium text-text-light bg-surface px-2 py-1 rounded">Kumulatif</span>
+            <TrendBadge trend={kpis.bookingTrend} />
           </div>
-          <p className="text-3xl font-display font-black text-primary tabular-nums">{stats.count}</p>
-          <p className="text-sm text-text-light mt-1">Total booking</p>
-        </m.div>
-
-        <m.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="bg-white rounded-xl p-6 border border-surface-dark shadow-sm"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-accent/20 rounded-lg flex items-center justify-center ring-1 ring-accent/40">
-              <DollarSign className="w-6 h-6 text-primary" />
-            </div>
-            <span className="text-xs font-medium text-text-light bg-surface px-2 py-1 rounded">Kumulatif</span>
-          </div>
-          <p className="text-2xl sm:text-3xl font-display font-black text-primary tabular-nums">{formatIdr(stats.revenue)}</p>
-          <p className="text-sm text-text-light mt-1">Total pendapatan</p>
-        </m.div>
-      </div>
-
-      <m.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
-        <DailyTrendExplorer bookings={bookings} />
-      </m.div>
-
-      <div className="bg-white rounded-xl border border-surface-dark shadow-sm overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-surface-dark px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="font-bold text-lg text-primary">Booking terbaru</h3>
-          <TimeRangeSelect id={recentTimeSelectId} value={timeRangeRecent} onChange={setTimeRangeRecent} />
+          <p className="text-sm text-text-light mb-1">Total Booking</p>
+          <p className="text-2xl font-display font-black text-primary tabular-nums">{kpis.totalBooking}</p>
         </div>
-        {filteredRecent.length === 0 ? (
-          <p className="text-text-light text-sm text-center py-12 px-6">Belum ada data booking untuk rentang ini.</p>
-        ) : (
-          <ul className="divide-y divide-surface-dark">
-            {pagedRecent.map((b) => (
-              <li key={b.order_id + b.recordedAt} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-6 py-4 hover:bg-surface/60">
-                <div>
-                  <p className="font-semibold text-primary">{b.guestName}</p>
-                  <p className="text-xs text-text-light font-mono">{b.order_id}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 text-sm text-text-light">
-                  <span>
-                    {b.checkIn} → {b.checkOut}
-                  </span>
-                  <span className="font-display font-bold text-accent">{formatIdr(b.gross_amount)}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        <ClientPaginationFooter
-          page={recentPage}
-          pageSize={recentPageSize}
-          totalItems={filteredRecent.length}
-          onPageChange={setRecentPage}
-          onPageSizeChange={setRecentPageSize}
-          selectId={`recent-${recentListSelectId}`}
-        />
+
+        {/* Card 2 */}
+        <div className="bg-white rounded-xl p-5 border border-surface-dark shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+              <DollarSign className="w-5 h-5 text-emerald-700" />
+            </div>
+            <TrendBadge trend={kpis.revenueTrend} />
+          </div>
+          <p className="text-sm text-text-light mb-1">Total Pendapatan</p>
+          <p className="text-2xl font-display font-black text-primary tabular-nums truncate" title={formatIdr(kpis.totalRevenue)}>
+            {formatIdr(kpis.totalRevenue)}
+          </p>
+        </div>
+
+        {/* Card 3 */}
+        <div className={`rounded-xl p-5 border shadow-sm flex flex-col justify-between transition-colors ${kpis.cancelRate > 50 ? "bg-amber-50 border-amber-200" : "bg-white border-surface-dark"}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${kpis.cancelRate > 50 ? "bg-amber-100" : "bg-red-50"}`}>
+              <AlertTriangle className={`w-5 h-5 ${kpis.cancelRate > 50 ? "text-amber-700" : "text-red-500"}`} />
+            </div>
+            <TrendBadgeInverted trend={kpis.cancelTrend} />
+          </div>
+          <p className="text-sm text-text-light mb-1">Tingkat Pembatalan</p>
+          <p className="text-2xl font-display font-black text-primary tabular-nums">
+            {kpis.cancelRate.toFixed(1)}%
+          </p>
+          <p className="text-xs text-text-light mt-1">({kpis.cancelCount} dari {kpis.totalBooking} dibatalkan)</p>
+        </div>
+
+        {/* Card 4 - Pendapatan Bulan Ini */}
+        <div className="bg-white rounded-xl p-5 border border-surface-dark shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+              <Wallet className="w-5 h-5 text-emerald-700" />
+            </div>
+            <TrendBadge trend={kpis.thisMonthRevenueTrend} />
+          </div>
+          <p className="text-sm text-text-light mb-1">Pendapatan Bulan Ini</p>
+          {kpis.thisMonthSuccessCount > 0 ? (
+            <p className="text-2xl font-display font-black text-primary tabular-nums truncate" title={formatIdr(kpis.thisMonthRevenue)}>
+              {formatIdr(kpis.thisMonthRevenue)}
+            </p>
+          ) : (
+            <p className="text-base font-medium text-text-light">Belum ada transaksi bulan ini</p>
+          )}
+        </div>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 bg-white rounded-xl border border-surface-dark shadow-sm p-6 flex flex-col">
+          <h3 className="font-display font-bold text-lg text-primary mb-1">Status Booking</h3>
+          <p className="text-xs text-text-light mb-6">Proporsi seluruh status reservasi</p>
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <StatusDonutChart
+              {...donutData}
+              revenueIn={donutInsights.revenueIn}
+              revenueLost={donutInsights.revenueLost}
+              mostActiveDay={donutInsights.mostActiveDay}
+            />
+          </div>
+        </div>
+        <div className="lg:col-span-2">
+          <TrendExplorer bookings={bookings} />
+        </div>
+      </div>
+
+      {/* Quick Insights Block */}
+      {quickInsights.length > 0 ? (
+        <div className="bg-white rounded-xl border border-surface-dark shadow-sm p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Lightbulb className="w-5 h-5 text-amber-500 shrink-0" />
+            <h3 className="font-display font-bold text-lg text-primary">Insight Cepat</h3>
+          </div>
+          <div className="space-y-3">
+            {quickInsights.map((insight, i) => (
+              <div
+                key={i}
+                className={`flex items-start gap-3 rounded-lg p-3 border ${insight.type === "success"
+                  ? "bg-emerald-50 border-emerald-200"
+                  : insight.type === "warning"
+                    ? "bg-amber-50 border-amber-200"
+                    : "bg-blue-50 border-blue-200"
+                  }`}
+              >
+                <span className="mt-0.5 shrink-0">
+                  {insight.type === "success" ? "✅" : insight.type === "warning" ? "⚠️" : "ℹ️"}
+                </span>
+                <p className={`text-sm ${insight.type === "success"
+                  ? "text-emerald-900"
+                  : insight.type === "warning"
+                    ? "text-amber-900"
+                    : "text-blue-900"
+                  }`}>
+                  {insight.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-surface-dark shadow-sm p-6 flex items-center gap-3">
+          <Lightbulb className="w-5 h-5 text-text-light shrink-0" />
+          <p className="text-sm text-text-light">Belum ada cukup data untuk生成 insight.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -911,39 +519,152 @@ function PaymentsSection({ bookings }: { bookings: RecordedBooking[] }) {
   const payStatusFilterId = useId();
   const [timeRange, setTimeRange] = useState<TimeRangePreset>("all");
   const [payStatusFilter, setPayStatusFilter] = useState<PaymentStatusFilter>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   const timeFiltered = filterBookingsByTimeRange(bookings, timeRange);
+
+  // Filter by custom date range (based on transaction date)
+  const dateFiltered = timeFiltered.filter((b) => {
+    if (!dateFrom && !dateTo) return true;
+    const rec = new Date(b.recordedAt);
+    if (!Number.isFinite(rec.getTime())) return false;
+    if (dateFrom && dateTo) {
+      const from = new Date(dateFrom + "T00:00:00");
+      const to = new Date(dateTo + "T23:59:59");
+      return rec >= from && rec <= to;
+    }
+    if (dateFrom) {
+      const from = new Date(dateFrom + "T00:00:00");
+      return rec >= from;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + "T23:59:59");
+      return rec <= to;
+    }
+    return true;
+  });
+
   const filtered =
-    payStatusFilter === "all" ? timeFiltered : timeFiltered.filter((b) => b.payment_status === payStatusFilter);
+    payStatusFilter === "all" ? dateFiltered : dateFiltered.filter((b) => b.payment_status === payStatusFilter);
 
   useEffect(() => {
     setPage(1);
-  }, [pageSize, timeRange, payStatusFilter]);
+  }, [pageSize, timeRange, payStatusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
     const tp = totalPagesFor(filtered.length, pageSize);
     setPage((p) => Math.min(p, tp));
-  }, [filtered.length, pageSize]);
+  }, [filtered.length, pageSize, dateFrom, dateTo]);
 
   const payTp = totalPagesFor(filtered.length, pageSize);
   const paySafePage = Math.min(Math.max(1, page), payTp);
   const pagedRows = slicePage(filtered, paySafePage, pageSize);
 
+  // Summary Metrics
+  const totalTransaksi = filtered.length;
+  const countBerhasil = filtered.filter(b => b.payment_status === "berhasil").length;
+  const countPending = filtered.filter(b => b.payment_status === "pending").length;
+  const countCancel = filtered.filter(b => b.payment_status === "dibatalkan").length;
+  const totalNilai = filtered.filter(b => b.payment_status === "berhasil").reduce((sum, b) => sum + b.gross_amount, 0);
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div>
-        <h2 className="font-display font-bold text-2xl text-primary mb-1">Manajemen Pembayaran</h2>
+        <h2 className="font-display font-bold text-2xl text-primary mb-1">Monitoring Pembayaran</h2>
         <p className="text-text-light text-sm">Semua transaksi tercatat — status pembayaran mengikuti Midtrans</p>
+      </div>
+
+      {/* Payment Insight Banners */}
+      {(() => {
+        const banners = computePaymentBanners(bookings);
+        if (banners.length === 0) return null;
+        return (
+          <div className="space-y-2">
+            {banners.map((banner, i) => (
+              <div
+                key={i}
+                className={`flex items-start gap-3 rounded-lg px-4 py-3 text-sm border ${banner.type === "warning"
+                  ? "bg-amber-50 border-amber-200 text-amber-900"
+                  : banner.type === "danger"
+                    ? "bg-red-50 border-red-200 text-red-900"
+                    : "bg-blue-50 border-blue-200 text-blue-900"
+                  }`}
+              >
+                <span className="mt-0.5 shrink-0">
+                  {banner.type === "warning" ? "🟡" : banner.type === "danger" ? "🔴" : "🔵"}
+                </span>
+                <span dangerouslySetInnerHTML={{ __html: banner.text }} />
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      <div className="bg-white rounded-xl border border-surface-dark shadow-sm overflow-hidden p-4 flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex gap-6 divide-x divide-surface-dark">
+          <div className="pr-6">
+            <p className="text-xs text-text-light mb-1">Total Transaksi</p>
+            <p className="text-xl font-bold text-primary">{totalTransaksi}</p>
+          </div>
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Berhasil</p>
+            <p className="text-xl font-bold text-emerald-600">{countBerhasil}</p>
+          </div>
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Pending</p>
+            <p className="text-xl font-bold text-amber-500">{countPending}</p>
+          </div>
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Cancel</p>
+            <p className="text-xl font-bold text-red-600">{countCancel}</p>
+          </div>
+        </div>
+        <div className="bg-surface px-4 py-2 rounded-lg border border-surface-dark text-right">
+          <p className="text-xs text-text-light mb-0.5">Total Nilai Berhasil</p>
+          <p className="text-lg font-bold text-primary">{formatIdr(totalNilai)}</p>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-surface-dark shadow-sm overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-surface-dark p-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <h3 className="font-bold text-lg text-primary">Transaksi terbaru</h3>
+          <h3 className="font-bold text-lg text-primary">Daftar Transaksi</h3>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <TimeRangeSelect id={timeSelectId} value={timeRange} onChange={setTimeRange} />
             <PaymentStatusFilterSelect id={payStatusFilterId} value={payStatusFilter} onChange={setPayStatusFilter} />
+            <div className="flex items-center gap-1">
+              <label htmlFor="date-from-payment" className="text-xs font-semibold text-text whitespace-nowrap">Dari</label>
+              <input
+                id="date-from-payment"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <label htmlFor="date-to-payment" className="text-xs font-semibold text-text whitespace-nowrap">Sampai</label>
+              <input
+                id="date-to-payment"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </div>
+            {(dateFrom || dateTo) && (
+              <button
+                type="button"
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="inline-flex items-center gap-1 rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-surface transition-colors"
+                title="Reset filter tanggal"
+              >
+                <span>×</span>
+                <span className="hidden sm:inline">Reset</span>
+              </button>
+            )}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -964,7 +685,7 @@ function PaymentsSection({ bookings }: { bookings: RecordedBooking[] }) {
                 <th className="px-6 py-3">Customer</th>
                 <th className="px-6 py-3">Nominal</th>
                 <th className="px-6 py-3">Keterangan</th>
-                <th className="px-6 py-3">Date</th>
+                <th className="px-6 py-3">Tanggal Transaksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-dark">
@@ -975,23 +696,39 @@ function PaymentsSection({ bookings }: { bookings: RecordedBooking[] }) {
                   </td>
                 </tr>
               ) : (
-                pagedRows.map((b) => (
-                  <tr key={b.order_id + b.recordedAt} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-6 py-4 font-mono text-xs font-medium text-primary">#{b.order_id.slice(-12)}</td>
-                    <td className="px-6 py-4 text-text">{b.guestName}</td>
-                    <td className="px-6 py-4 font-semibold text-primary">
-                      {b.payment_status === "berhasil" ? formatIdr(b.gross_amount) : "—"}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-block px-2.5 py-1 text-xs rounded-full font-semibold ${paymentStatusBadgeClass(b.payment_status)}`}
-                      >
-                        {paymentStatusLabel(b.payment_status)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-text-light text-xs whitespace-nowrap">{formatWhen(b.recordedAt)}</td>
-                  </tr>
-                ))
+                pagedRows.map((b) => {
+                  const isCancel = b.payment_status === "dibatalkan";
+                  const isPending = b.payment_status === "pending";
+                  return (
+                    <tr key={b.order_id + b.recordedAt} className="hover:bg-surface/50 transition-colors">
+                      <td className="px-6 py-4 font-mono text-xs font-medium text-primary">
+                        <span title={b.order_id}>{truncateOrderId(b.order_id)}</span>
+                      </td>
+                      <td className="px-6 py-4 text-text">{b.guestName}</td>
+                      <td className="px-6 py-4 font-semibold text-primary">
+                        {b.payment_status === "berhasil" ? (
+                          formatIdr(b.gross_amount)
+                        ) : isPending ? (
+                          <span className="text-amber-500 tabular-nums" title="Menunggu pembayaran">
+                            {formatIdr(b.gross_amount)} <span className="text-[10px] text-amber-400 font-normal ml-1">Menunggu</span>
+                          </span>
+                        ) : isCancel ? (
+                          <span className="text-red-400 tabular-nums line-through" title="Pembayaran tidak masuk">
+                            {formatIdr(b.gross_amount)}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-block px-2.5 py-1 text-xs rounded-full font-semibold ${paymentStatusBadgeClass(b.payment_status)}`}>
+                          {paymentStatusLabel(b.payment_status)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-text-light text-xs whitespace-nowrap">{formatWhen(b.recordedAt)}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1004,6 +741,9 @@ function PaymentsSection({ bookings }: { bookings: RecordedBooking[] }) {
           onPageSizeChange={setPageSize}
           selectId={`payments-${pageSizeSelectId}`}
         />
+        <div className="bg-surface/30 border-t border-surface-dark px-6 py-3">
+          <p className="text-xs text-text-light text-right">Semua waktu ditampilkan dalam zona WIB (UTC+7)</p>
+        </div>
       </div>
     </div>
   );
@@ -1015,12 +755,39 @@ function BookingsDataSection({ bookings }: { bookings: RecordedBooking[] }) {
   const payStatusFilterId = useId();
   const [timeRange, setTimeRange] = useState<TimeRangePreset>("all");
   const [payStatusFilter, setPayStatusFilter] = useState<PaymentStatusFilter>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [selectedBooking, setSelectedBooking] = useState<RecordedBooking | null>(null);
+  const [bookingToEdit, setBookingToEdit] = useState<RecordedBooking | null>(null);
+  const [bookingToDelete, setBookingToDelete] = useState<RecordedBooking | null>(null);
 
   const timeFiltered = filterBookingsByTimeRange(bookings, timeRange);
+
+  // Filter by custom date range (based on check-in date)
+  const dateFiltered = timeFiltered.filter((b) => {
+    if (!dateFrom && !dateTo) return true;
+    const ci = new Date(b.checkIn + "T00:00:00");
+    if (!Number.isFinite(ci.getTime())) return false;
+    if (dateFrom && dateTo) {
+      const from = new Date(dateFrom + "T00:00:00");
+      const to = new Date(dateTo + "T23:59:59");
+      return ci >= from && ci <= to;
+    }
+    if (dateFrom) {
+      const from = new Date(dateFrom + "T00:00:00");
+      return ci >= from;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + "T23:59:59");
+      return ci <= to;
+    }
+    return true;
+  });
+
   const filtered =
-    payStatusFilter === "all" ? timeFiltered : timeFiltered.filter((b) => b.payment_status === payStatusFilter);
+    payStatusFilter === "all" ? dateFiltered : dateFiltered.filter((b) => b.payment_status === payStatusFilter);
 
   useEffect(() => {
     setPage(1);
@@ -1029,17 +796,112 @@ function BookingsDataSection({ bookings }: { bookings: RecordedBooking[] }) {
   useEffect(() => {
     const tp = totalPagesFor(filtered.length, pageSize);
     setPage((p) => Math.min(p, tp));
-  }, [filtered.length, pageSize]);
+  }, [filtered.length, pageSize, dateFrom, dateTo]);
 
   const bookTp = totalPagesFor(filtered.length, pageSize);
   const bookSafePage = Math.min(Math.max(1, page), bookTp);
   const pagedRows = slicePage(filtered, bookSafePage, pageSize);
 
+  const formatDateId = (dateStr: string) => {
+    if (!dateStr) return "—";
+    const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return dateStr;
+    const day = d.toLocaleDateString("id-ID", { weekday: "long" });
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${day}, ${dd}-${mm}-${yyyy}`;
+  };
+
+  // Summary Metrics
+  const totalTransaksi = filtered.length;
+
+  let countUpcoming = 0;
+  let countBerlangsung = 0;
+  let countSelesai = 0;
+  let countDibatalkan = 0;
+  let countPending = 0;
+
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+  const next7Days = new Date(todayDate);
+  next7Days.setDate(todayDate.getDate() + 7);
+
+  let countUpcoming7Days = 0;
+
+  filtered.forEach((b) => {
+    const st = getUnifiedBookingStatus(b);
+    if (st.badge === "Upcoming") countUpcoming++;
+    else if (st.badge === "Berlangsung") countBerlangsung++;
+    else if (st.badge === "Selesai") countSelesai++;
+    else if (st.badge === "Dibatalkan") countDibatalkan++;
+    else if (st.badge === "Pending") countPending++;
+
+    if (b.payment_status === "berhasil") {
+      const ci = new Date(b.checkIn + "T00:00:00");
+      if (ci >= todayDate && ci <= next7Days) {
+        countUpcoming7Days++;
+      }
+    }
+  });
+
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <div>
         <h2 className="font-display font-bold text-2xl text-primary mb-1">Data Booking</h2>
         <p className="text-text-light text-sm">Detail reservasi dari pembayaran tercatat</p>
+      </div>
+
+      {/* Booking Insight Banners */}
+      {(() => {
+        const banners = computeBookingBanners(bookings);
+        if (banners.length === 0) return null;
+        return (
+          <div className="space-y-2">
+            {banners.map((banner, i) => (
+              <div
+                key={i}
+                className={`flex items-start gap-3 rounded-lg px-4 py-3 text-sm border ${banner.type === "warning"
+                  ? "bg-amber-50 border-amber-200 text-amber-900"
+                  : banner.type === "danger"
+                    ? "bg-red-50 border-red-200 text-red-900"
+                    : "bg-blue-50 border-blue-200 text-blue-900"
+                  }`}
+              >
+                <span className="mt-0.5 shrink-0">
+                  {banner.type === "warning" ? "🟡" : banner.type === "danger" ? "🔴" : "🔵"}
+                </span>
+                <span dangerouslySetInnerHTML={{ __html: banner.text }} />
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      <div className="bg-white rounded-xl border border-surface-dark shadow-sm overflow-hidden p-4 flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex gap-6 divide-x divide-surface-dark">
+          <div className="pr-6">
+            <p className="text-xs text-text-light mb-1">Total</p>
+            <p className="text-xl font-bold text-primary">{totalTransaksi}</p>
+          </div>
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Akan Check-in</p>
+            <p className="text-xl font-bold text-blue-600">{countUpcoming}</p>
+          </div>
+
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Selesai</p>
+            <p className="text-xl font-bold text-gray-600">{countSelesai}</p>
+          </div>
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Dibatalkan</p>
+            <p className="text-xl font-bold text-red-600">{countDibatalkan}</p>
+          </div>
+          <div className="px-6">
+            <p className="text-xs text-text-light mb-1">Pending</p>
+            <p className="text-xl font-bold text-amber-500">{countPending}</p>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-surface-dark shadow-sm overflow-hidden">
@@ -1048,6 +910,37 @@ function BookingsDataSection({ bookings }: { bookings: RecordedBooking[] }) {
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <TimeRangeSelect id={timeSelectId} value={timeRange} onChange={setTimeRange} />
             <PaymentStatusFilterSelect id={payStatusFilterId} value={payStatusFilter} onChange={setPayStatusFilter} />
+            <div className="flex items-center gap-1">
+              <label htmlFor="date-from-booking" className="text-xs font-semibold text-text whitespace-nowrap">Dari</label>
+              <input
+                id="date-from-booking"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <label htmlFor="date-to-booking" className="text-xs font-semibold text-text whitespace-nowrap">Sampai</label>
+              <input
+                id="date-to-booking"
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-medium text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
+              />
+            </div>
+            {(dateFrom || dateTo) && (
+              <button
+                type="button"
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="inline-flex items-center gap-1 rounded-lg border border-surface-dark bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-surface transition-colors"
+                title="Reset filter tanggal"
+              >
+                <span>×</span>
+                <span className="hidden sm:inline">Reset</span>
+              </button>
+            )}
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -1061,67 +954,96 @@ function BookingsDataSection({ bookings }: { bookings: RecordedBooking[] }) {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] text-sm">
+          <table className="w-full min-w-[1024px] text-sm">
             <thead>
               <tr className="bg-primary text-white text-left text-[11px] uppercase tracking-wider">
                 <th className="px-4 py-3 font-semibold">Order ID</th>
                 <th className="px-4 py-3 font-semibold">Tamu</th>
                 <th className="px-4 py-3 font-semibold">Kontak</th>
                 <th className="px-4 py-3 font-semibold">Check-in / out</th>
-                <th className="px-4 py-3 font-semibold">Properti</th>
-                <th className="px-4 py-3 font-semibold text-right">Total</th>
-                <th className="px-4 py-3 font-semibold">Pembayaran</th>
-                <th className="px-4 py-3 font-semibold">Waktu bayar</th>
+                <th className="px-4 py-3 font-semibold">Status</th>
+                <th className="px-4 py-3 font-semibold text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-dark">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-16 text-center text-text-light">
+                  <td colSpan={6} className="px-6 py-16 text-center text-text-light">
                     Belum ada data booking untuk rentang ini.
                   </td>
                 </tr>
               ) : (
-                pagedRows.map((b) => (
-                  <tr key={b.order_id + b.recordedAt} className="hover:bg-surface/50 transition-colors align-top">
-                    <td className="px-4 py-3 font-mono text-xs text-primary font-medium max-w-[140px] break-all">{b.order_id}</td>
-                    <td className="px-4 py-3">
-                      <span className="font-semibold text-primary flex items-center gap-1.5">
-                        <Users className="w-3.5 h-3.5 text-text-light shrink-0" />
-                        {b.guestName}
-                      </span>
-                      <span className="text-xs text-text-light block mt-0.5">{b.guestEmail}</span>
-                    </td>
-                    <td className="px-4 py-3 text-text-light text-xs">
-                      <span className="flex items-center gap-1 whitespace-nowrap">
-                        <Phone className="w-3.5 h-3.5 shrink-0" />
-                        {b.guestPhone || "—"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-text whitespace-nowrap">
-                      {b.checkIn}
-                      <span className="text-text-light mx-1">→</span>
-                      {b.checkOut}
-                    </td>
-                    <td className="px-4 py-3 text-text max-w-[180px]">
-                      <span className="flex items-start gap-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-text-light shrink-0 mt-0.5" />
-                        <span className="line-clamp-2">{b.propertyName || "—"}</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-display font-bold text-primary whitespace-nowrap">
-                      {b.payment_status === "berhasil" ? formatIdr(b.gross_amount) : "—"}
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <span
-                        className={`inline-block px-2.5 py-1 text-xs rounded-full font-semibold ${paymentStatusBadgeClass(b.payment_status)}`}
-                      >
-                        {paymentStatusLabel(b.payment_status)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-text-light text-xs whitespace-nowrap">{formatWhen(b.recordedAt)}</td>
-                  </tr>
-                ))
+                pagedRows.map((b) => {
+                  const checkInBadge = getCheckInBadge(b.checkIn);
+                  const isCancel = b.payment_status === "dibatalkan" || b.payment_status === "gagal";
+                  const unifiedStatus = getUnifiedBookingStatus(b);
+
+                  return (
+                    <tr key={b.order_id + b.recordedAt} className="hover:bg-surface/50 transition-colors align-top group">
+                      <td className="px-4 py-3 font-mono text-xs text-primary font-medium max-w-[140px] break-all">
+                        <span title={b.order_id}>{truncateOrderId(b.order_id)}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-semibold text-primary flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-text-light shrink-0" />
+                          <span className="line-clamp-1">{b.guestName}</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-text-light text-xs">
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <Phone className="w-3.5 h-3.5 shrink-0" />
+                          {b.guestPhone || "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-text whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          <span className="flex items-center gap-1">
+                            {formatDateId(b.checkIn)} <span className="text-text-light text-[10px]">→</span> {formatDateId(b.checkOut)}
+                          </span>
+                          {checkInBadge && !isCancel && (
+                            <span className={`inline-block w-fit px-1.5 py-0.5 rounded text-[10px] font-semibold ${checkInBadge.color}`}>{checkInBadge.text}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-block w-fit px-2.5 py-1 text-[11px] rounded font-semibold ${unifiedStatus.colorClass}`}>
+                            {unifiedStatus.badge}
+                          </span>
+                          <span className="text-[10px] text-text-light mt-0.5 leading-snug max-w-[140px]">
+                            {unifiedStatus.desc}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex flex-wrap justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBooking(b)}
+                            className="inline-flex items-center justify-center rounded bg-surface px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-surface-dark"
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" />
+                            Detail
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBookingToEdit(b)}
+                            className="inline-flex items-center justify-center rounded border border-surface-dark px-3 py-1.5 text-xs font-semibold text-text transition-colors hover:bg-surface"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBookingToDelete(b)}
+                            className="inline-flex items-center justify-center rounded bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1135,6 +1057,21 @@ function BookingsDataSection({ bookings }: { bookings: RecordedBooking[] }) {
           selectId={`bookings-${pageSizeSelectId}`}
         />
       </div>
+      <BookingDetailModal booking={selectedBooking} onClose={() => setSelectedBooking(null)} />
+      <BookingEditModal
+        booking={bookingToEdit}
+        onClose={() => setBookingToEdit(null)}
+        onSave={async (id, updates) => {
+          await updateBooking(id, updates);
+        }}
+      />
+      <DeleteConfirmModal
+        booking={bookingToDelete}
+        onClose={() => setBookingToDelete(null)}
+        onConfirm={async (id) => {
+          await deleteBooking(id);
+        }}
+      />
     </div>
   );
 }
