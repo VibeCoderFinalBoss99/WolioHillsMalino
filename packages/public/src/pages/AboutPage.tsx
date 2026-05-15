@@ -182,7 +182,7 @@ export default function AboutPage() {
         </svg>
         <div className="absolute inset-0" style={{ clipPath: "url(#about-hero-bottom-wave)" }}>
           <img
-            src="./images/IMG_6888.webp"
+            src="/images/IMG_6888.webp"
             alt="Pemandangan pegunungan Malino"
             className="absolute inset-0 h-full w-full object-cover object-center"
             width={1920}
@@ -277,7 +277,7 @@ export default function AboutPage() {
             className="w-full min-h-[380px] lg:min-h-[520px] relative rounded-3xl overflow-hidden shadow-deep gold-border"
           >
               <img
-                src="./images/picture-3.webp"
+                src="/images/picture-3.webp"
                 alt="Interior villa Wolio Hills dengan pemandangan hutan"
                 className="absolute inset-0 w-full h-full object-cover"
                 loading="lazy"
@@ -375,7 +375,7 @@ export default function AboutPage() {
               viewport={{ once: true }}
               className="w-full lg:w-[58%] min-h-[320px] lg:min-h-[480px] order-2 lg:order-1 rounded-3xl overflow-hidden shadow-deep gold-border"
             >
-              <img src="./images/IMG_6950.webp" alt="Ruang tamu villa pada golden hour" className="w-full h-full object-cover min-h-[320px] lg:min-h-[480px]" loading="lazy" />
+              <img src="/images/IMG_6950.webp" alt="Ruang tamu villa pada golden hour" className="w-full h-full object-cover min-h-[320px] lg:min-h-[480px]" loading="lazy" />
             </m.div>
             <div className="w-full lg:w-[42%] order-1 lg:order-2 flex flex-col items-start">
               <h3 className="font-display font-black text-primary text-2xl md:text-4xl mb-4 leading-tight">
@@ -406,7 +406,7 @@ export default function AboutPage() {
               viewport={{ once: true }}
               className="w-full lg:w-[58%] min-h-[320px] lg:min-h-[480px] rounded-3xl overflow-hidden shadow-deep gold-border"
             >
-              <img src="./images/IMG_6965.webp" alt="Kabut pagi di pegunungan" className="w-full h-full object-cover min-h-[320px] lg:min-h-[480px]" loading="lazy" />
+              <img src="/images/IMG_6965.webp" alt="Kabut pagi di pegunungan" className="w-full h-full object-cover min-h-[320px] lg:min-h-[480px]" loading="lazy" />
             </m.div>
           </div>
 
@@ -417,7 +417,7 @@ export default function AboutPage() {
               viewport={{ once: true }}
               className="w-full lg:w-[58%] min-h-[320px] lg:min-h-[480px] order-2 lg:order-1 rounded-3xl overflow-hidden shadow-deep gold-border"
             >
-              <img src="./images/IMG_6973.webp" alt="Area teras dan pemandangan lembah" className="w-full h-full object-cover min-h-[320px] lg:min-h-[480px]" loading="lazy" />
+              <img src="/images/IMG_6973.webp" alt="Area teras dan pemandangan lembah" className="w-full h-full object-cover min-h-[320px] lg:min-h-[480px]" loading="lazy" />
             </m.div>
             <div className="w-full lg:w-[42%] order-1 lg:order-2 flex flex-col items-start">
               <h3 className="font-display font-black text-primary text-2xl md:text-4xl mb-4 leading-tight">

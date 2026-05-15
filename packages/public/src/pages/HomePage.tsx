@@ -50,12 +50,12 @@ export default function HomePage({ navigate, startBooking }: HomePageProps) {
         {/* Full-size background image — slight bleed menghindari garis sub-pixel di tepi atas */}
         <div className="absolute -inset-px min-h-[calc(100%+2px)] min-w-[calc(100%+2px)]">
           <img
-            src="./images/hero-section.webp"
+            src="/images/hero-section.webp"
             alt="Wolio Hills Malino"
             className="h-full w-full max-w-none object-cover object-center"
             width={1920}
             height={1080}
-            decoding="async"
+            decoding="sync"
             fetchPriority="high"
             style={{ minHeight: "100vh", minWidth: "100%", objectFit: "cover" }}
           />
@@ -66,27 +66,27 @@ export default function HomePage({ navigate, startBooking }: HomePageProps) {
 
         <div className="relative z-10 text-center max-w-5xl mx-auto px-6 pt-32 pb-20">
           <m.h1
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 1, y: 0 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.8 }}
+            transition={{ duration: 0.8 }}
             className="font-display font-black text-white text-5xl sm:text-6xl md:text-7xl lg:text-8xl leading-[0.9] mb-6 tracking-tight"
             style={{ textShadow: '0 10px 40px rgba(45,67,36,0.3)' }}
           >
             Wolio Hills<br /><span className="text-gradient">Malino</span>
           </m.h1>
           <m.p
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 1, y: 0 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
+            transition={{ duration: 0.6 }}
             className="text-white/60 text-base sm:text-lg max-w-2xl mx-auto mb-10 leading-relaxed"
             style={{ textShadow: '0 5px 20px rgba(0,0,0,0.2)' }}
           >
             Wolio Hills Malino - Pengalaman menginap premium di tengah keindahan alam Malino yang memukau. Tempat perfect buat staycation, healing, dan quality time bareng orang tersayang!
           </m.p>
           <m.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 1, y: 0 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
+            transition={{ duration: 0.8 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8"
           >
             <m.button
@@ -297,7 +297,7 @@ export default function HomePage({ navigate, startBooking }: HomePageProps) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <m.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="relative">
               <div className="rounded-3xl overflow-hidden shadow-2xl">
-                <img src="./images/picture-2.webp" alt="Wolio Hills Malino" className="w-full h-[400px] object-cover" loading="lazy" />
+                <img src="/images/picture-2.webp" alt="Wolio Hills Malino" className="w-full h-[400px] object-cover" loading="lazy" />
               </div>
               <div
                 className="absolute -bottom-6 -right-6 bg-accent text-primary p-4 rounded-2xl shadow-xl"

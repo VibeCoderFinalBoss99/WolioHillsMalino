@@ -83,7 +83,7 @@ export default function Footer({ navigate }: FooterProps) {
             </ul>
           </m.div>
 
-          {/* Services */}
+          {/* Social Media */}
           <m.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -94,11 +94,13 @@ export default function Footer({ navigate }: FooterProps) {
             </h4>
             <ul className="space-y-3 text-white/50 text-sm">
               {[
-                { name: "Instagram", link: "#" },
-                { name: "TikTok", link: "#" }
+                { name: "TikTok", link: "https://www.tiktok.com/@woliohills", target: "_blank", rel: "noopener noreferrer" },
+                { name: "Instagram", link: "https://www.instagram.com/woliohillsmalino/", target: "_blank", rel: "noopener noreferrer" }
               ].map((social) => (
                 <li key={social.name} className="hover:text-accent transition-colors cursor-default">
-                  <a href={social.link}>
+                  <a href={social.link}
+                    target={social.target}
+                    rel="noopener noreferrer">
                     {social.name}
                   </a>
                 </li>

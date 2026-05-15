@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } fro
 import { BOOKING_DRAFT_KEY, clearFullPaymentSession, clearPaymentOrderState } from "./lib/sessionKeys";
 import { AnimatePresence, m } from "motion/react";
 import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
-import FloatingButtons from "./components/FloatingButtons";
+const Footer = lazy(() => import("./components/Footer"));
+const FloatingButtons = lazy(() => import("./components/FloatingButtons"));
 import HomePage from "./pages/HomePage";
 
 const AboutPage = lazy(() => import("./pages/AboutPage"));
@@ -227,7 +227,9 @@ export default function App() {
   return (
     <div className="min-h-screen relative">
       <Navbar currentPage={currentPage} navigate={navigate} />
-      <FloatingButtons />
+      <Suspense fallback={null}>
+        <FloatingButtons />
+      </Suspense>
 
       <AnimatePresence mode="wait">
         <m.div
@@ -242,7 +244,9 @@ export default function App() {
         </m.div>
       </AnimatePresence>
 
-      <Footer navigate={navigate} />
+      <Suspense fallback={null}>
+        <Footer navigate={navigate} />
+      </Suspense>
     </div>
   );
 }
