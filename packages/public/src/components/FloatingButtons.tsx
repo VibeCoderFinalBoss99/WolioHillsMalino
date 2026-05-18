@@ -5,7 +5,7 @@ export default function FloatingButtons() {
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
   return (
-    <div className="fixed bottom-8 right-8 z-[150] flex flex-col gap-3">
+    <div className="fixed bottom-8 right-8 z-[150] flex flex-col items-end gap-3">
       <m.button
         onClick={scrollToTop}
         initial={{ scale: 0, opacity: 0 }}

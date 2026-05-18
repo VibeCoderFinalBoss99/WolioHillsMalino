@@ -1,7 +1,6 @@
-import React, { useState } from "react";
+import React from "react";
 import { m } from "motion/react";
-import { MapPin, Phone, Mail, Clock, Send, Check } from "lucide-react";
-import emailjs from "@emailjs/browser";
+import { MapPin, Phone, Mail, Clock } from "lucide-react";
 import { use3DTilt } from "../hooks/use3DTilt";
 import type { PageName } from "../App";
 
@@ -28,39 +27,7 @@ function ContactCard({ icon: Icon, title, value, delay }: { icon: React.ElementT
 }
 
 export default function ContactPage({}: Props) {
-  const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setSending(true);
-    setError("");
-
-    emailjs
-      .send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        {
-          name: formData.name,
-          email: formData.email,
-          subject: formData.subject,
-          message: formData.message,
-        },
-        import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-      )
-      .then(() => {
-        setSending(false);
-        setSent(true);
-      })
-      .catch(() => {
-        setSending(false);
-        setError("Gagal mengirim pesan. Silakan coba lagi atau hubungi kami langsung via WhatsApp.");
-      });
-  };
-
-  const inputClass = "w-full bg-surface border border-surface-dark rounded-xl px-4 py-3 text-sm text-text focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all";
 
   return (
     <div className="min-w-0 overflow-x-clip">
@@ -84,73 +51,10 @@ export default function ContactPage({}: Props) {
         </div>
       </section>
 
-      {/* Form + Map */}
+      {/* Map */}
       <section className="py-12 px-6 max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Form */}
-          <m.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
-            {sent ? (
-              <m.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white p-10 rounded-3xl shadow-deep gold-border text-center h-full flex flex-col items-center justify-center">
-                <div className="w-20 h-20 rounded-full bg-success mx-auto mb-6 flex items-center justify-center shadow-lg">
-                  <Check className="w-10 h-10 text-white" />
-                </div>
-                <h3 className="font-display font-bold text-primary text-2xl mb-3">Pesan Terkirim!</h3>
-                <p className="text-text-light text-sm mb-6">Makasih udah hubungi kami. Kami akan balas dalam 24 jam.</p>
-                <m.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => { setSent(false); setFormData({ name: "", email: "", subject: "", message: "" }); }}
-                  className="text-accent hover:text-accent-dark font-semibold text-sm cursor-pointer"
-                >
-                  Kirim Pesan Lagi
-                </m.button>
-              </m.div>
-            ) : (
-              <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl shadow-deep gold-border">
-                <h3 className="font-display font-bold text-primary text-2xl mb-6">Kirim Pesan</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-widest text-text-light mb-2 block">Nama Lengkap</label>
-                    <input type="text" required value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} placeholder="Nama kamu" className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-widest text-text-light mb-2 block">Email</label>
-                    <input type="email" required value={formData.email} onChange={e => setFormData(p => ({ ...p, email: e.target.value }))} placeholder="email@kamu.com" className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-widest text-text-light mb-2 block">Subjek</label>
-                    <input type="text" required value={formData.subject} onChange={e => setFormData(p => ({ ...p, subject: e.target.value }))} placeholder="Ada yang bisa kami bantu?" className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold uppercase tracking-widest text-text-light mb-2 block">Pesan</label>
-                    <textarea required value={formData.message} onChange={e => setFormData(p => ({ ...p, message: e.target.value }))} rows={5} placeholder="Ceritain lebih detail..." className={inputClass} />
-                  </div>
-
-                  {/* Error message */}
-                  {error && (
-                    <p className="text-red-500 text-xs text-center">{error}</p>
-                  )}
-
-                  <m.button
-                    type="submit"
-                    whileHover={{ scale: sending ? 1 : 1.02 }}
-                    whileTap={{ scale: sending ? 1 : 0.98 }}
-                    disabled={sending}
-                    className={`w-full font-bold text-sm tracking-wider uppercase py-4 rounded-full shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-all ${sending ? "bg-text-light text-white" : "bg-accent hover:bg-accent-light text-primary"}`}
-                  >
-                    {sending ? (
-                      <><div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Mengirim...</>
-                    ) : (
-                      <><Send className="w-4 h-4" /> Kirim Pesan</>
-                    )}
-                  </m.button>
-                </div>
-              </form>
-            )}
-          </m.div>
-
-          {/* Map */}
-          <m.div initial={{ opacity: 0, x: 30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="relative">
+        <div className="w-full">
+          <m.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="relative">
             <div className="w-full h-full min-h-[400px] rounded-3xl overflow-hidden shadow-deep gold-border relative">
               <iframe
                 title="Wolio Hills Location"
