@@ -4,13 +4,30 @@ on:
   schedule:
     - cron: '0 0 */3 * *'   # every 3 days — well under the 7-day window
   workflow_dispatch:         # lets you trigger it manually to test
-
+  
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Ping Supabase table
         run: |
-          curl -X GET "https://bnghchxebtqqwouyskcs.supabase.co/rest/v1/keep_alive?select=id&limit=1" \
+          curl -X GET "https://bnghchxebtqgwouyskcs.supabase.co/rest/v1/keep_alive?select=id&limit=1" \
           -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+
+      - name: Record ping in repo
+        run: |
+          mkdir -p .keepalive
+          date -u > .keepalive/last-ping.txt
+
+      - name: Commit heartbeat file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .keepalive/last-ping.txt
+          git commit -m "chore: keep-alive ping $(date -u +%Y-%m-%d)" || echo "Nothing to commit"
+          git push
+
+        
